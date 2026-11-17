@@ -1,5 +1,5 @@
 /* 업데이트할 때마다 VERSION 숫자를 바꾸면 휴대폰 앱에 '새 버전' 안내가 떠요 */
-var VERSION = '1.0.0';
+var VERSION = '1.1.0';
 var CACHE = 'baby-record-' + VERSION;
 var FILES = ['./', './index.html', './style.css', './app.js', './ref.js', './config.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png'];

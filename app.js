@@ -1,6 +1,6 @@
-/* 우리 아이 기록장 v1.0.0 */
+/* 우리 아이 기록장 v1.1.0 */
 'use strict';
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 
 /* ───────── 기본 도우미 ───────── */
 const $ = (s, r = document) => r.querySelector(s);
@@ -29,52 +29,112 @@ const ICON = {
   photo: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 16l-5-5-8 8"/>')
 };
 
-const TAGS = [
+/* 태그: 기본 태그 + 설정에서 만든 태그 (Tags 표) */
+const DEFAULT_TAGS = [
   { k: 'first', l: '⭐ 처음 한 일' }, { k: 'word', l: '💬 새 말' }, { k: 'sick', l: '🏥 아픈 날' },
   { k: 'outing', l: '🚗 나들이' }, { k: 'anniv', l: '🎂 기념일' }
 ];
-const tagLabel = k => (TAGS.find(t => t.k === k) || { l: k }).l;
+function allTags() {
+  const map = {};
+  DEFAULT_TAGS.forEach((t, i) => { map[t.k] = { k: t.k, l: t.l, order: i, hidden: false, base: true }; });
+  T('Tags').forEach(r => {
+    const k = r.key || r.id;
+    map[k] = Object.assign(map[k] || { k, base: false }, { l: r.label || (map[k] || {}).l || k, order: num(r.order) != null ? num(r.order) : 99, hidden: String(r.hidden).toUpperCase() === 'TRUE', rowId: r.id });
+  });
+  return Object.values(map).sort((a, b) => a.order - b.order);
+}
+const visibleTags = () => allTags().filter(t => !t.hidden);
+const tagLabel = k => (allTags().find(t => t.k === k) || { l: k }).l;
 
-/* 발달 이정표 기본 목록
-   from/to: WHO 운동발달 기준(2006) 대부분의 아이가 해내는 기간
-   by: CDC 발달 체크리스트(2022) 대부분(75%)의 아이가 이때까지 해냄 */
-const DEFAULT_MS = [
-  { key: 'head', t: '목 가누기', c: '몸', by: 4 },
-  { key: 'roll', t: '뒤집기', c: '몸', by: 6 },
-  { key: 'sit', t: '혼자 앉기', c: '몸', from: 3.8, to: 9.2 },
-  { key: 'crawl', t: '기기', c: '몸', from: 5.2, to: 13.5 },
-  { key: 'stand_help', t: '잡고 서기', c: '몸', from: 4.8, to: 11.4 },
-  { key: 'walk_help', t: '잡고 걷기', c: '몸', from: 5.9, to: 13.7 },
-  { key: 'stand', t: '혼자 서기', c: '몸', from: 6.9, to: 16.9 },
-  { key: 'walk', t: '혼자 걷기', c: '몸', from: 8.2, to: 17.6 },
-  { key: 'run', t: '뛰기', c: '몸', by: 24 },
-  { key: 'kick', t: '공 차기', c: '몸', by: 24 },
-  { key: 'stairs', t: '계단 오르기', c: '몸', by: 24 },
-  { key: 'wave', t: '빠이빠이 손 흔들기', c: '손·생활', by: 12 },
-  { key: 'blocks2', t: '블록 2개 쌓기', c: '손·생활', by: 15 },
-  { key: 'cup', t: '컵으로 마시기', c: '손·생활', by: 18 },
-  { key: 'spoon', t: '숟가락질 해보기', c: '손·생활', by: 18 },
-  { key: 'scribble', t: '끄적이기', c: '손·생활', by: 18 },
-  { key: 'mama', t: '엄마·아빠 부르기', c: '말', by: 12 },
-  { key: 'point', t: '원하는 것 가리키기', c: '말', by: 15 },
-  { key: 'word1', t: '첫 단어 (엄마·아빠 말고)', c: '말', by: 15 },
-  { key: 'words3', t: '단어 3개 이상', c: '말', by: 18 },
-  { key: 'follow1', t: '간단한 지시 따르기', c: '말', by: 18 },
-  { key: 'body', t: '신체 부위 가리키기', c: '말', by: 24 },
-  { key: 'two', t: '두 단어 문장', c: '말', by: 24 },
-  { key: 'words50', t: '단어 50개', c: '말', by: 30 },
-  { key: 'copy', t: '어른 행동 따라 하기', c: '사회', by: 18 }
+/* 발달 체크리스트
+   출처: 미국 CDC "Learn the Signs. Act Early." 발달 체크리스트 (2022 개정, 공공 자료)
+   각 시기까지 대부분(75% 이상)의 아이가 하는 것. d: 사회 / 말 / 인지 / 몸 */
+const MS_GROUPS = [
+  { m: 2, label: '2개월', items: [
+    ['m2_calm', '말을 걸거나 안아주면 진정해요', '사회'], ['m2_face', '엄마·아빠 얼굴을 바라봐요', '사회'], ['m2_happy', '다가가면 반가워하는 것 같아요', '사회'], ['m2_smile', '말을 걸거나 웃어주면 따라 웃어요', '사회'],
+    ['m2_sound', '울음 말고 다른 소리를 내요', '말'], ['m2_loud', '큰 소리에 반응해요', '말'],
+    ['m2_watch', '움직이는 사람을 눈으로 따라가요', '인지'], ['m2_toy', '장난감을 몇 초 동안 바라봐요', '인지'],
+    ['m2_headup', '엎드렸을 때 머리를 들어요', '몸'], ['m2_limbs', '팔다리를 모두 움직여요', '몸'], ['m2_hands', '손을 잠깐씩 펴요', '몸']] },
+  { m: 4, label: '4개월', items: [
+    ['m4_smile', '관심을 끌려고 먼저 웃어요', '사회'], ['m4_chuckle', '웃기려고 하면 킥킥거려요', '사회'], ['m4_attn', '관심을 끌려고 보거나 움직이거나 소리 내요', '사회'],
+    ['m4_coo', '"우~", "아~" 같은 옹알이를 해요', '말'], ['m4_back', '말을 걸면 소리로 대답해요', '말'], ['m4_turn', '목소리 나는 쪽으로 고개를 돌려요', '말'],
+    ['m4_hungry', '배고플 때 젖병·젖을 보면 입을 벌려요', '인지'], ['m4_handlook', '자기 손을 신기하게 바라봐요', '인지'],
+    ['head', '안고 있을 때 목을 혼자 가눠요', '몸'], ['m4_hold', '손에 쥐여주면 장난감을 잡아요', '몸'], ['m4_swing', '장난감을 향해 팔을 휘둘러요', '몸'], ['m4_mouth', '손을 입으로 가져가요', '몸'], ['m4_elbow', '엎드려서 팔꿈치로 상체를 받쳐요', '몸']] },
+  { m: 6, label: '6개월', items: [
+    ['m6_know', '익숙한 사람을 알아봐요', '사회'], ['m6_mirror', '거울 속 자기 모습을 좋아해요', '사회'], ['m6_laugh', '소리 내어 웃어요', '사회'],
+    ['m6_turns', '주고받으며 소리를 내요', '말'], ['m6_raspb', '혀를 내밀고 "푸~" 하고 불어요', '말'], ['m6_squeal', '꺅꺅 높은 소리를 내요', '말'],
+    ['m6_explore', '물건을 입에 넣어 탐색해요', '인지'], ['m6_reach', '갖고 싶은 장난감에 손을 뻗어 잡아요', '인지'], ['m6_lips', '더 먹기 싫으면 입을 다물어요', '인지'],
+    ['roll', '배에서 등으로 뒤집어요', '몸'], ['m6_push', '엎드려서 팔을 펴고 상체를 들어요', '몸'], ['m6_lean', '앉을 때 손으로 바닥을 짚고 버텨요', '몸']] },
+  { m: 9, label: '9개월', items: [
+    ['m9_shy', '낯선 사람 앞에서 낯을 가리거나 매달려요', '사회'], ['m9_faces', '기쁨·슬픔·화남·놀람 등 여러 표정을 지어요', '사회'], ['m9_name', '이름을 부르면 쳐다봐요', '사회'], ['m9_leave', '엄마·아빠가 떠나면 반응해요 (찾거나 울어요)', '사회'], ['m9_peek', '까꿍 놀이에 웃어요', '사회'],
+    ['m9_babble', '"마마마", "바바바" 같은 소리를 내요', '말'], ['m9_arms', '안아달라고 팔을 들어요', '말'],
+    ['m9_look', '떨어뜨린 물건을 찾아요', '인지'], ['m9_bang', '두 물건을 맞부딪쳐요', '인지'],
+    ['m9_getsit', '혼자 앉는 자세를 잡아요', '몸'], ['m9_pass', '물건을 한 손에서 다른 손으로 옮겨요', '몸'], ['m9_rake', '손가락으로 음식을 끌어와요', '몸'], ['sit', '받쳐주지 않아도 혼자 앉아요', '몸'],
+    ['crawl', '기어 다녀요 (CDC 목록 외 참고 항목)', '몸']] },
+  { m: 12, label: '12개월', items: [
+    ['m12_game', '짝짜꿍 같은 놀이를 함께해요', '사회'],
+    ['wave', '빠이빠이 손을 흔들어요', '말'], ['mama', '엄마·아빠를 "엄마", "아빠"처럼 불러요', '말'], ['m12_no', '"안 돼"를 알아들어요 (멈칫하거나 멈춰요)', '말'],
+    ['m12_put', '컵에 블록을 넣는 것처럼 물건을 통에 넣어요', '인지'], ['m12_hide', '숨기는 걸 본 물건을 찾아요', '인지'],
+    ['stand_help', '잡고 일어서요', '몸'], ['walk_help', '가구를 잡고 걸어요', '몸'], ['m12_cup', '잡아주면 뚜껑 없는 컵으로 마셔요', '몸'], ['m12_pinch', '엄지와 검지로 작은 것을 집어요', '몸']] },
+  { m: 15, label: '15개월', items: [
+    ['m15_copy', '놀 때 다른 아이를 따라 해요', '사회'], ['m15_show', '좋아하는 물건을 보여줘요', '사회'], ['m15_clap', '신나면 손뼉을 쳐요', '사회'], ['m15_hug', '인형이나 장난감을 안아요', '사회'], ['m15_aff', '안기거나 뽀뽀하며 애정을 표현해요', '사회'],
+    ['word1', '엄마·아빠 말고 한두 단어를 말하려 해요', '말'], ['m15_name', '이름을 말하면 그 물건을 쳐다봐요', '말'], ['m15_follow', '손짓과 말로 하는 지시를 따라요', '말'], ['point', '원하는 것을 달라고 손가락으로 가리켜요', '말'],
+    ['m15_use', '전화기·컵·책을 제대로 쓰려고 해요', '인지'], ['blocks2', '블록 같은 작은 물건을 2개 이상 쌓아요', '인지'],
+    ['m15_steps', '혼자 몇 걸음 걸어요', '몸'], ['m15_feed', '손가락으로 음식을 집어 먹어요', '몸']] },
+  { m: 18, label: '18개월', items: [
+    ['m18_away', '떨어져 놀다가 엄마·아빠가 있는지 돌아봐요', '사회'], ['m18_point', '재미있는 것을 가리켜 보여줘요', '사회'], ['m18_wash', '손 씻으라면 손을 내밀어요', '사회'], ['m18_book', '책 몇 장을 함께 봐요', '사회'], ['m18_dress', '옷 입힐 때 팔을 넣거나 발을 들어 도와요', '사회'],
+    ['words3', '엄마·아빠 말고 단어를 3개 이상 말해요', '말'], ['follow1', '손짓 없이 말로만 해도 한 단계 지시를 따라요', '말'],
+    ['copy', '청소 같은 집안일을 따라 해요', '인지'], ['m18_car', '장난감 자동차를 밀며 노는 등 간단하게 놀아요', '인지'],
+    ['walk', '아무것도 잡지 않고 걸어요', '몸'], ['scribble', '끄적거려요', '몸'], ['cup', '뚜껑 없는 컵으로 마셔요 (가끔 흘려요)', '몸'], ['m18_finger', '손가락으로 집어 먹어요', '몸'], ['spoon', '숟가락을 써보려 해요', '몸'], ['m18_climb', '소파나 의자에 혼자 오르내려요', '몸']] },
+  { m: 24, label: '2세 (24개월)', items: [
+    ['m24_notice', '다른 사람이 다치거나 속상하면 알아채요', '사회'], ['m24_look', '낯선 상황에서 엄마·아빠 얼굴을 보고 반응을 살펴요', '사회'],
+    ['m24_bookpt', '"곰돌이 어디 있어?" 하면 책에서 가리켜요', '말'], ['two', '"우유 더"처럼 두 단어를 붙여 말해요', '말'], ['body', '물어보면 신체 부위를 2곳 이상 가리켜요', '말'], ['m24_gest', '손 흔들기·가리키기 말고 뽀뽀 날리기, 고개 끄덕이기 같은 몸짓을 해요', '말'],
+    ['m24_switch', '장난감의 버튼·스위치·손잡이를 써보려 해요', '인지'], ['m24_two', '장난감 음식을 접시에 담듯 두 가지 이상으로 함께 놀아요', '인지'], ['m24_hold', '한 손으로 통을 잡고 다른 손으로 뚜껑을 여는 식으로 두 손을 따로 써요', '인지'],
+    ['kick', '공을 차요', '몸'], ['run', '뛰어요', '몸'], ['stairs', '도움을 받거나 혼자 계단 몇 칸을 걸어 올라가요', '몸'], ['m24_spoon', '숟가락으로 먹어요', '몸']] },
+  { m: 30, label: '30개월', items: [
+    ['m30_play', '다른 아이 옆에서 놀고 가끔 같이 놀아요', '사회'], ['m30_look', '"나 봐!" 하며 할 수 있는 걸 보여줘요', '사회'], ['m30_routine', '"정리할 시간이야" 하면 장난감 정리를 도와요', '사회'],
+    ['words50', '단어를 50개쯤 말해요', '말'], ['m30_action', '"멍멍이 뛰어"처럼 동작어를 넣어 두 단어 이상 말해요', '말'], ['m30_name', '책 그림을 가리키며 "이게 뭐야?" 하면 이름을 말해요', '말'], ['m30_me', '"나", "내가", "우리" 같은 말을 써요', '말'],
+    ['m30_pretend', '블록을 음식인 척 인형에게 먹이는 등 흉내 놀이를 해요', '인지'], ['m30_solve', '높은 곳 물건을 잡으려고 작은 의자에 올라가는 등 문제를 해결해요', '인지'], ['m30_two', '"장난감 내려놓고 문 닫아" 같은 두 단계 지시를 따라요', '인지'], ['m30_color', '색깔을 하나 이상 알아요', '인지'],
+    ['m30_twist', '문손잡이를 돌리거나 뚜껑을 돌려 열어요', '몸'], ['m30_undress', '헐렁한 바지나 열린 겉옷을 혼자 벗어요', '몸'], ['m30_jump', '두 발로 깡충 뛰어요', '몸'], ['m30_page', '책을 한 장씩 넘겨요', '몸']] },
+  { m: 36, label: '3세', items: [
+    ['m36_calm', '어린이집에 데려다주면 10분 안에 진정해요', '사회'], ['m36_join', '다른 아이를 보고 함께 놀아요', '사회'],
+    ['m36_talk', '두 번 이상 주고받으며 대화해요', '말'], ['m36_ask', '"누구?", "뭐?", "어디?", "왜?"라고 물어요', '말'], ['m36_action', '그림 속 동작을 말해요 (달려, 먹어)', '말'], ['m36_name', '물어보면 자기 이름을 말해요', '말'], ['m36_clear', '다른 사람도 대부분 알아듣게 말해요', '말'],
+    ['m36_circle', '보여주면 동그라미를 그려요', '인지'], ['m36_hot', '"뜨거워" 하면 뜨거운 것을 피해요', '인지'],
+    ['m36_string', '큰 구슬 같은 것을 줄에 꿰어요', '몸'], ['m36_dress', '헐렁한 바지나 겉옷을 혼자 입어요', '몸'], ['m36_fork', '포크를 써요', '몸']] },
+  { m: 48, label: '4세', items: [
+    ['m48_pretend', '선생님·영웅·강아지 등 다른 무언가인 척 놀아요', '사회'], ['m48_ask', '친구와 놀고 싶다고 말해요', '사회'], ['m48_comfort', '다치거나 슬픈 친구를 달래줘요', '사회'], ['m48_danger', '높은 곳에서 뛰어내리지 않는 등 위험을 피해요', '사회'], ['m48_helper', '"도와주는 사람" 역할을 좋아해요', '사회'], ['m48_place', '장소에 따라 행동을 바꿔요 (도서관, 놀이터)', '사회'],
+    ['m48_four', '네 단어 이상으로 된 문장을 말해요', '말'], ['m48_song', '노래나 동화의 말을 조금 따라 해요', '말'], ['m48_day', '그날 있었던 일을 하나 이상 말해요', '말'], ['m48_what', '"외투는 뭐 할 때 써?" 같은 질문에 대답해요', '말'],
+    ['m48_colors', '물건 색깔 몇 가지를 말해요', '인지'], ['m48_story', '잘 아는 이야기에서 다음 내용을 말해요', '인지'], ['m48_person', '몸 부분이 3개 이상 있는 사람을 그려요', '인지'],
+    ['m48_catch', '큰 공을 대부분 받아요', '몸'], ['m48_pour', '어른이 보는 앞에서 음식을 덜거나 물을 따라요', '몸'], ['m48_unbutton', '단추를 몇 개 풀어요', '몸'], ['m48_crayon', '크레용을 주먹이 아닌 손가락으로 쥐어요', '몸']] },
+  { m: 60, label: '5세', items: [
+    ['m60_rules', '친구들과 놀 때 규칙을 지키거나 차례를 기다려요', '사회'], ['m60_perform', '노래하거나 춤추거나 연기를 보여줘요', '사회'], ['m60_chores', '양말 짝 맞추기, 식탁 치우기 같은 간단한 집안일을 해요', '사회'],
+    ['m60_tell', '사건이 2개 이상인 이야기를 들려줘요', '말'], ['m60_answer', '책을 읽어준 뒤 간단한 질문에 대답해요', '말'], ['m60_convo', '세 번 넘게 주고받으며 대화를 이어가요', '말'], ['m60_rhyme', '끝말이 같은 말장난을 알아요', '말'],
+    ['m60_count', '10까지 세요', '인지'], ['m60_numbers', '1~5 사이 숫자를 몇 개 읽어요', '인지'], ['m60_time', '"어제", "내일", "아침", "밤" 같은 시간 말을 써요', '인지'], ['m60_focus', '5~10분 동안 집중해서 활동해요', '인지'], ['m60_write', '자기 이름 글자 몇 개를 써요', '인지'], ['m60_letters', '가리키는 글자 몇 개를 읽어요', '인지'],
+    ['m60_button', '단추를 몇 개 채워요', '몸'], ['m60_hop', '한 발로 깡충 뛰어요', '몸']] }
 ];
-const MS_CATS = ['몸', '손·생활', '말', '사회', '기타'];
+const MS_DOMAINS = ['사회', '말', '인지', '몸', '기타'];
+const MS_DOMAIN_LABEL = { 사회: '사회·정서', 말: '말·소통', 인지: '인지', 몸: '몸 움직임', 기타: '직접 추가' };
 
-/* 젖니 20개: 보통 나는 시기(개월) */
-const TOOTH_NAMES = ['가운데 앞니', '옆 앞니', '송곳니', '첫째 어금니', '둘째 어금니'];
-const TOOTH_RANGE = { U: [[8, 12], [9, 13], [16, 22], [13, 19], [25, 33]], L: [[6, 10], [10, 16], [17, 23], [14, 18], [23, 31]] };
-const TEETH = [];
-['U', 'L'].forEach(j => ['R', 'L'].forEach(s => [0, 1, 2, 3, 4].forEach(i => TEETH.push({
-  code: j + s + i, jaw: j, side: s, i, name: (j === 'U' ? '위 ' : '아래 ') + (s === 'R' ? '오른쪽 ' : '왼쪽 ') + TOOTH_NAMES[i],
-  from: TOOTH_RANGE[j][i][0], to: TOOTH_RANGE[j][i][1]
-}))));
+/* 이: 젖니 20개 + 영구치 32개
+   젖니 나는 시기·빠지는 시기, 영구치 나는 시기: 미국치과협회(ADA) 치아 발달표 기준 (개월) */
+const PRIMARY_NAMES = ['가운데 앞니', '옆 앞니', '송곳니', '첫째 어금니', '둘째 어금니'];
+const PRIMARY_RANGE = { U: [[8, 12], [9, 13], [16, 22], [13, 19], [25, 33]], L: [[6, 10], [10, 16], [17, 23], [14, 18], [23, 31]] };
+const PRIMARY_SHED = { U: [[72, 84], [84, 96], [120, 144], [108, 132], [120, 144]], L: [[72, 84], [84, 96], [108, 144], [108, 132], [120, 144]] };
+const PERM_NAMES = ['가운데 앞니', '옆 앞니', '송곳니', '첫째 작은어금니', '둘째 작은어금니', '첫째 큰어금니', '둘째 큰어금니', '사랑니'];
+const PERM_RANGE = { U: [[84, 96], [96, 108], [132, 144], [120, 132], [120, 144], [72, 84], [144, 156], [204, 252]],
+                     L: [[72, 84], [84, 96], [108, 120], [120, 144], [132, 144], [72, 84], [132, 156], [204, 252]] };
+const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+const TEETH = [], PERM = [];
+['U', 'L'].forEach(j => ['R', 'L'].forEach(s => {
+  [0, 1, 2, 3, 4].forEach(i => TEETH.push({ code: j + s + i, jaw: j, side: s, i, no: i + 1,
+    name: (j === 'U' ? '위 ' : '아래 ') + (s === 'R' ? '오른쪽 ' : '왼쪽 ') + CIRCLED[i] + ' ' + PRIMARY_NAMES[i],
+    from: PRIMARY_RANGE[j][i][0], to: PRIMARY_RANGE[j][i][1], shedFrom: PRIMARY_SHED[j][i][0], shedTo: PRIMARY_SHED[j][i][1] }));
+  [0, 1, 2, 3, 4, 5, 6, 7].forEach(i => PERM.push({ code: 'P' + j + s + i, jaw: j, side: s, i, no: i + 1, perm: true,
+    name: (j === 'U' ? '위 ' : '아래 ') + (s === 'R' ? '오른쪽 ' : '왼쪽 ') + CIRCLED[i] + ' ' + PERM_NAMES[i],
+    from: PERM_RANGE[j][i][0], to: PERM_RANGE[j][i][1] }));
+}));
+const toothByCode = c => TEETH.find(t => t.code === c) || PERM.find(t => t.code === c);
+const yrs = m => m >= 24 && m % 12 === 0 ? `${m / 12}세` : m >= 24 ? `${(m / 12).toFixed(1).replace('.0', '')}세` : `${m}개월`;
 
 const WORD_CATS = ['사람', '음식', '동물', '물건', '탈것', '몸', '동작', '표현', '기타'];
 const VISIT_KINDS = ['진료', '아픈 날', '치과', '응급실', '입원', '기타'];
@@ -83,7 +143,7 @@ const VISIT_KINDS = ['진료', '아픈 날', '치과', '응급실', '입원', '�
 const S = {
   token: LS.get('token', null), user: LS.get('user', null), data: LS.get('data', null),
   child: LS.get('child', null), showRef: LS.get('showRef', true),
-  filter: { q: '', tag: '', month: '' }, page: 20, devTab: 'growth', measure: 'height', wordKind: 'word',
+  filter: { q: '', tag: '', month: '', author: '' }, page: 20, devTab: 'growth', measure: 'height', wordKind: 'word',
   wordQ: '', showDone: false, waitingSW: null, loading: false
 };
 const T = name => (S.data && S.data[name]) || [];
@@ -398,9 +458,11 @@ function homeView() {
   if (c) {
     const g = latestGrowth(c);
     const wc = T('Words').filter(w => w.childId === c.id && w.kind !== 'sentence').length;
-    top = `<div class="sum">
-      <div class="s coral"><small>키 · 몸무게</small><b>${g.h ? num(g.h.height) + 'cm' : '-'} · ${g.w ? num(g.w.weight) + 'kg' : '-'}</b></div>
-      <div class="s honey" data-act="go" data-h="words"><small>말한 단어</small><b>${wc}개</b></div></div>`;
+    const md = r => r ? `<span class="sdate">${shortDate(r.date)}</span>` : '';
+    top = `<div class="sum sum3">
+      <div class="s coral" data-act="growthGo" data-v="height"><small>키</small><b>${g.h ? num(g.h.height) + 'cm' : '-'}</b>${md(g.h)}</div>
+      <div class="s coral" data-act="growthGo" data-v="weight"><small>몸무게</small><b>${g.w ? num(g.w.weight) + 'kg' : '-'}</b>${md(g.w)}</div>
+      <div class="s honey" data-act="go" data-h="words"><small>말한 단어</small><b>${wc}개</b><span class="sdate">${wordStage(c).now}</span></div></div>`;
   }
   const nv = nextVaccines(c, 60);
   const vac = nv.slice(0, 2).map(v => `<div class="card notice" data-act="go" data-h="health"><span>${c ? '' : esc((childById(v.childId) || {}).name || '') + ' '}${esc(v.disease)} ${esc(v.dose)} 접종 예정</span><span class="d">D-${diffDays(today(), v.date)}</span></div>`).join('');
@@ -413,17 +475,26 @@ function homeView() {
       <input class="i grow" type="search" placeholder="기록 검색" value="${esc(f.q)}" data-in="search">
       <select class="i" style="width:auto" data-ch="month"><option value="">전체 기간</option>${months.map(m => `<option value="${m}" ${f.month === m ? 'selected' : ''}>${m.replace('-', '년 ')}월</option>`).join('')}</select>
     </div>
-    <div class="chips" style="margin-bottom:4px"><button class="chip ${!f.tag ? 'on' : ''}" data-act="tagFilter" data-v="">전체</button>${TAGS.map(t => `<button class="chip ${f.tag === t.k ? 'on' : ''}" data-act="tagFilter" data-v="${t.k}">${t.l}</button>`).join('')}</div>
+    <div class="chips" style="margin-bottom:4px"><button class="chip ${!f.tag && !f.author ? 'on' : ''}" data-act="tagFilter" data-v="">전체</button>${authors().map(a => `<button class="chip ${f.author === a ? 'on' : ''}" data-act="authorFilter" data-v="${esc(a)}">${esc(a)}${josa(a)} 쓴</button>`).join('')}<span class="chip-sep"></span>${visibleTags().map(t => `<button class="chip ${f.tag === t.k ? 'on' : ''}" data-act="tagFilter" data-v="${t.k}">${esc(t.l)}</button>`).join('')}</div>
     <div id="tl">${timelineHtml()}</div></div>${navBar('home')}`;
 }
 const isTrue = v => String(v).toUpperCase() === 'TRUE';
+const josa = w => { const c = String(w).charCodeAt(String(w).length - 1); return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 ? '이' : '가'; };
+const authorBadge = a => a ? `<span class="auth ${a === '엄마' ? 'mom' : a === '아빠' ? 'dad' : ''}">${esc(a)}</span>` : '';
+const firstLine = t => { const l = String(t).split('\n').map(x => x.trim()).filter(Boolean); return (l[0] || '') + (l.length > 1 ? ' …' : ''); };
+const shortDate = d => isDate(d) ? `${d.slice(2, 4)}.${Number(d.slice(5, 7))}.${Number(d.slice(8))}` : '';
+function authors() {
+  const set = new Set(T('Entries').map(e => e.author).filter(Boolean));
+  if (S.user && S.user.name) set.add(S.user.name);
+  return ['엄마', '아빠'].filter(a => set.has(a)).concat([...set].filter(a => a !== '엄마' && a !== '아빠'));
+}
 function entries() {
   const c = curChild();
   return T('Entries').filter(e => !c || String(e.childIds || '').split(',').includes(c.id));
 }
 function timelineHtml() {
   const f = S.filter, q = f.q.trim().toLowerCase();
-  let list = entries().filter(e => (!f.tag || (f.tag === '__draft' ? isTrue(e.draft) : String(e.tags).split(',').includes(f.tag)))
+  let list = entries().filter(e => (!f.tag || (f.tag === '__draft' ? isTrue(e.draft) : String(e.tags).split(',').includes(f.tag))) && (!f.author || e.author === f.author)
     && (!f.month || String(e.date).startsWith(f.month)) && (!q || String(e.text).toLowerCase().includes(q)));
   list.sort((a, b) => a.date === b.date ? (num(b.createdAt) || 0) - (num(a.createdAt) || 0) : (a.date < b.date ? 1 : -1));
   if (!list.length) return `<div class="card muted" style="text-align:center;padding:28px 12px">${T('Entries').length ? '조건에 맞는 기록이 없어요.' : '첫 기록을 남겨보세요. 아래 ＋ 버튼을 누르면 돼요.'}</div>`;
@@ -443,9 +514,9 @@ function timelineHtml() {
     const names = many ? String(e.childIds).split(',').map(id => (childById(id) || {}).name).filter(Boolean).join('·') : '';
     html += `<div class="card entry" data-act="go" data-h="entry/${e.id}">
       ${ph.length ? `<div class="thumb"><img data-pid="${ph[0].thumb}" alt="">${ph.length > 1 ? `<span class="more">+${ph.length - 1}</span>` : ''}</div>` : ''}
-      <div class="grow"><div class="txt">${e.text ? esc(e.text) : `<span class="muted">${isTrue(e.draft) ? '내용을 채워주세요' : '사진 기록'}</span>`}</div>
-      <div class="meta">${isTrue(e.draft) ? '<span class="tag draft">초안</span>' : ''}${tags.map(t => `<span class="tag ${t === 'first' ? 'star' : ''}">${tagLabel(t)}</span>`).join('')}
-      ${names ? `<span>${esc(names)}</span>` : ''}<span>${esc(e.author || '')}</span>${hearts ? `<span>♥ ${hearts}</span>` : ''}${cm ? `<span>댓글 ${cm}</span>` : ''}</div></div></div>`;
+      <div class="grow"><div class="txt">${e.text ? esc(firstLine(e.text)) : `<span class="muted">${isTrue(e.draft) ? '내용을 채워주세요' : '사진 기록'}</span>`}</div>
+      <div class="meta">${isTrue(e.draft) ? '<span class="tag draft">초안</span>' : ''}${tags.map(t => `<span class="tag ${t === 'first' ? 'star' : ''}">${esc(tagLabel(t))}</span>`).join('')}
+      ${names ? `<span>${esc(names)}</span>` : ''}${authorBadge(e.author)}${hearts ? `<span>♥ ${hearts}</span>` : ''}${cm ? `<span>댓글 ${cm}</span>` : ''}</div></div></div>`;
   });
   if (list.length > S.page) html += `<button class="btn block" data-act="more">더 보기 (${list.length - S.page}개 남음)</button>`;
   return html;
@@ -470,7 +541,7 @@ function editorView(id) {
     <label class="f">사진 (최대 5장)</label><div class="pics" id="e_pics">${editorPicsHtml()}</div>
     <input type="file" id="e_file" accept="image/*" multiple class="hidden">
     <label class="f">내용</label><textarea class="i" id="e_text" placeholder="오늘 있었던 일을 적어보세요">${esc(E.text)}</textarea>
-    <label class="f">태그</label><div class="chips" id="e_tags">${TAGS.map(t => `<button type="button" class="chip ${E.tags.includes(t.k) ? 'on' : ''}" data-act="eTag" data-v="${t.k}">${t.l}</button>`).join('')}</div>
+    <label class="f">태그</label><div class="chips" id="e_tags">${visibleTags().filter(t => !E.tags.includes(t.k)).concat(allTags().filter(t => E.tags.includes(t.k))).map(t => `<button type="button" class="chip ${E.tags.includes(t.k) ? 'on' : ''}" data-act="eTag" data-v="${t.k}">${esc(t.l)}</button>`).join('')}</div>
     <div id="e_extra">${editorExtraHtml()}</div>
     <p class="err" id="e_err"></p>
     <div class="progress hidden" id="e_prog"><div></div></div>
@@ -487,8 +558,10 @@ function editorExtraHtml() {
   if (E.tags.includes('first')) {
     const k = childById(E.childIds[0]);
     const done = k ? new Set(T('Milestones').filter(m => m.childId === k.id).map(m => m.key)) : new Set();
-    const defs = allMsDefs().filter(d => !done.has(d.key));
-    h += `<label class="f">발달 이정표에도 표시할까요? (선택)</label><select class="i" id="e_ms"><option value="">표시 안 함</option>${MS_CATS.map(cat => { const ds = defs.filter(d => d.c === cat); return ds.length ? `<optgroup label="${cat}">${ds.map(d => `<option value="${d.key}" ${E.msKey === d.key ? 'selected' : ''}>${esc(d.t)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select>`;
+    const cur = k ? age(k, E.date).months : 0;
+    const groups = msGroups().filter(g => !done.size || g.items.some(d => !done.has(d.key)));
+    const near = groups.filter(g => g.m >= cur - 6 && g.m <= cur + 12);
+    h += `<label class="f">발달 체크에도 표시할까요? (선택)</label><select class="i" id="e_ms"><option value="">표시 안 함</option>${(near.length ? near : groups).map(g => `<optgroup label="${g.label}">${g.items.filter(d => !done.has(d.key)).map(d => `<option value="${d.key}" ${E.msKey === d.key ? 'selected' : ''}>${esc(d.t)}</option>`).join('')}</optgroup>`).join('')}</select>`;
   }
   if (E.tags.includes('word')) {
     h += `<label class="f">단어장에 추가할 말 (쉼표로 구분, 선택)</label><input class="i" id="e_words" placeholder="예: 까까, 아빠 차" value="${esc(E.newWords)}">
@@ -506,7 +579,7 @@ function mountEditor() {
     for (const file of files) {
       try {
         const thumbUrl = await resizeImage(file, 360, 0.72);
-        const fullUrl = await resizeImage(file, 1600, 0.82);
+        const fullUrl = await resizeImage(file, 2560, 0.86);
         const pd = await photoDate(file);
         E.photos.push({ thumbUrl, fullUrl, date: pd });
       } catch (e) { toast(e.message); }
@@ -577,7 +650,7 @@ function entryView(id) {
     <button class="btn small ghost" data-act="go" data-h="edit/${e.id}">고치기</button></div>
   <div class="page">${photosOf(e).map(p => `<img class="photo-full" data-pid="${p.full}" alt="">`).join('')}
     <div class="card"><div style="white-space:pre-wrap;word-break:break-word">${e.text ? esc(e.text) : '<span class="muted">내용 없음</span>'}</div>
-      <div class="meta" style="margin-top:8px">${tags.map(t => `<span class="tag ${t === 'first' ? 'star' : ''}">${tagLabel(t)}</span>`).join('')}<span>${esc(e.author || '')} 씀</span></div>
+      <div class="meta" style="margin-top:8px">${tags.map(t => `<span class="tag ${t === 'first' ? 'star' : ''}">${tagLabel(t)}</span>`).join('')}${authorBadge(e.author)}<span>씀</span></div>
       <div class="between" style="margin-top:6px"><button class="heart ${mine ? 'on' : ''}" data-act="heart" data-id="${e.id}">${mine ? ICON.heartOn : ICON.heart}<span>${hearts.length ? hearts.map(h => esc(h.author)).join(', ') : '좋아요'}</span></button></div>
     </div>
     <div class="card"><div class="small muted">댓글</div>
@@ -592,11 +665,13 @@ function entryView(id) {
 function devView() {
   const c = pageChild();
   if (!c) return noChild('발달');
-  const tabs = [['growth', '성장'], ['ms', '발달 이정표'], ['teeth', '이']];
-  let body = S.devTab === 'ms' ? msHtml(c) : S.devTab === 'teeth' ? teethHtml(c) : growthHtml(c);
+  const many = children().length > 1;
+  const tabs = [['growth', '성장'], ['ms', '발달 체크'], ['teeth', '이']].concat(many ? [['compare', '형제 비교']] : []);
+  if (S.devTab === 'compare' && !many) S.devTab = 'growth';
+  const body = S.devTab === 'ms' ? msHtml(c) : S.devTab === 'teeth' ? teethHtml(c) : S.devTab === 'compare' ? compareHtml() : growthHtml(c);
+  const refBtn = S.devTab === 'growth' || S.devTab === 'teeth' ? `<button class="chip ${S.showRef ? 'on' : ''}" data-act="toggleRef" style="margin-left:8px">기준</button>` : '';
   return `${topBar()}${updateBanner()}<div class="page">
-    <div class="between" style="margin-bottom:8px"><div class="seg grow" style="margin:0">${tabs.map(([k, l]) => `<button class="${S.devTab === k ? 'on' : ''}" data-act="devTab" data-v="${k}">${l}</button>`).join('')}</div>
-    <button class="chip ${S.showRef ? 'on' : ''}" data-act="toggleRef" style="margin-left:8px">기준</button></div>
+    <div class="between" style="margin-bottom:8px"><div class="seg grow" style="margin:0">${tabs.map(([k, l]) => `<button class="${S.devTab === k ? 'on' : ''}" data-act="devTab" data-v="${k}">${l}</button>`).join('')}</div>${refBtn}</div>
     ${body}</div>${navBar('dev')}`;
 }
 function noChild(where) { return `${topBar(where)}<div class="page"><div class="card">설정에서 아이를 먼저 등록해 주세요.</div></div>${navBar('')}`; }
@@ -625,9 +700,12 @@ function pctText(p) {
   return `또래 100명 중 약 ${Math.max(1, Math.round(p))}번째`;
 }
 const MEASURES = { height: { l: '키', u: 'cm', f: 'height' }, weight: { l: '몸무게', u: 'kg', f: 'weight' }, head: { l: '머리둘레', u: 'cm', f: 'head' } };
+const KID_COLORS = ['#D85A30', '#3B6FB6', '#3F8F5A', '#8A5BB5'];
+const kidColor = c => KID_COLORS[Math.max(0, children().findIndex(k => k.id === c.id)) % KID_COLORS.length];
+const growthRows = (c, f) => T('Growth').filter(g => g.childId === c.id && num(g[f]) != null).sort((a, b) => a.date < b.date ? -1 : 1);
 function growthHtml(c) {
   const m = MEASURES[S.measure];
-  const rows = T('Growth').filter(g => g.childId === c.id && num(g[m.f]) != null).sort((a, b) => a.date < b.date ? -1 : 1);
+  const rows = growthRows(c, m.f);
   const last = rows[rows.length - 1];
   const p = last && S.showRef ? percentile(c, S.measure, last.date, num(last[m.f])) : null;
   const all = T('Growth').filter(g => g.childId === c.id).sort((a, b) => a.date < b.date ? 1 : -1);
@@ -643,19 +721,26 @@ function growthHtml(c) {
     ${all.length > 12 && !S.growthAll ? `<button class="btn block ghost" data-act="growthAll">전체 보기</button>` : ''}</div>`;
 }
 function growthChart(c, measure, rows) {
-  const W = 340, H = 230, L = 36, R = 8, Tp = 10, B = 24;
   const nowM = age(c).mDec;
   const lastM = rows.length ? age(c, rows[rows.length - 1].date).mDec : 0;
   const xmax = Math.min(60, Math.max(12, Math.ceil((Math.max(nowM, lastM) + 2) / 6) * 6));
   const pts = rows.map(g => ({ x: age(c, g.date).mDec, y: num(g[MEASURES[measure].f]) })).filter(p => p.x >= 0);
-  const curve = z => { const out = []; for (let mth = 0; mth <= xmax + 0.001; mth += xmax / 60) { const l = lmsAt(measure, c.sex, mth * 30.4375); if (l) out.push({ x: mth, y: valAtZ(z, l) }); } return out; };
-  const Z = { p3: -1.881, p15: -1.036, p50: 0, p85: 1.036, p97: 1.881 };
-  const cv = S.showRef ? Object.fromEntries(Object.entries(Z).map(([k, z]) => [k, curve(z)])) : null;
-  let ys = pts.map(p => p.y);
-  if (cv) ys = ys.concat(cv.p3.map(p => p.y), cv.p97.map(p => p.y));
-  if (!ys.length) return '';
-  let y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const padY = (y1 - y0) * 0.06 || 1; y0 -= padY; y1 += padY;
+  let ref = null;
+  if (S.showRef) {
+    const curve = z => { const out = []; for (let mth = 0; mth <= xmax + 0.001; mth += xmax / 60) { const l = lmsAt(measure, c.sex, mth * 30.4375); if (l) out.push({ x: mth, y: valAtZ(z, l) }); } return out; };
+    ref = { p3: curve(-1.881), p15: curve(-1.036), p50: curve(0), p85: curve(1.036), p97: curve(1.881) };
+  }
+  return lineChart([{ color: '#D85A30', pts, dots: true }], { xmax, ref, label: MEASURES[measure].l + ' 성장 그래프' });
+}
+/* 공통 선 그래프 (가로: 개월) */
+function lineChart(series, o) {
+  const W = 340, H = 230, L = 36, R = 8, Tp = 10, B = 24;
+  const xmax = o.xmax;
+  let ys = [].concat(...series.map(s => s.pts.map(p => p.y)));
+  if (o.ref) ys = ys.concat(o.ref.p3.map(p => p.y), o.ref.p97.map(p => p.y));
+  if (!ys.length) return '<div class="muted small" style="padding:20px 0;text-align:center">아직 기록이 없어요.</div>';
+  let y0 = o.y0 != null ? o.y0 : Math.min(...ys), y1 = Math.max(...ys);
+  const padY = (y1 - y0) * 0.06 || 1; if (o.y0 == null) y0 -= padY; y1 += padY;
   const sx = x => L + (x / xmax) * (W - L - R), sy = y => Tp + (1 - (y - y0) / (y1 - y0)) * (H - Tp - B);
   const path = arr => arr.map((p, i) => (i ? 'L' : 'M') + sx(p.x).toFixed(1) + ' ' + sy(p.y).toFixed(1)).join(' ');
   const band = (a, b) => path(a) + ' ' + b.slice().reverse().map(p => 'L' + sx(p.x).toFixed(1) + ' ' + sy(p.y).toFixed(1)).join(' ') + ' Z';
@@ -664,68 +749,143 @@ function growthChart(c, measure, rows) {
   for (let x = 0; x <= xmax; x += step) grid += `<line x1="${sx(x)}" x2="${sx(x)}" y1="${Tp}" y2="${H - B}" stroke="#F1E6D3"/><text x="${sx(x)}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#B4A58E">${x}</text>`;
   const yStep = niceStep((y1 - y0) / 5);
   for (let y = Math.ceil(y0 / yStep) * yStep; y <= y1; y += yStep) grid += `<line x1="${L}" x2="${W - R}" y1="${sy(y)}" y2="${sy(y)}" stroke="#F1E6D3"/><text x="${L - 4}" y="${sy(y) + 3}" font-size="10" text-anchor="end" fill="#B4A58E">${+y.toFixed(1)}</text>`;
-  const ref = cv ? `<path d="${band(cv.p3, cv.p97)}" fill="#F7E6D6"/><path d="${band(cv.p15, cv.p85)}" fill="#F2D3BC"/><path d="${path(cv.p50)}" fill="none" stroke="#D85A30" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>` : '';
-  const line = pts.length > 1 ? `<path d="${path(pts)}" fill="none" stroke="#993C1D" stroke-width="1.6"/>` : '';
-  const dots = pts.map(p => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.2" fill="#D85A30" stroke="#fff" stroke-width="1.2"/>`).join('');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${MEASURES[measure].l} 성장 그래프">${grid}${ref}${line}${dots}
+  const ref = o.ref ? `<path d="${band(o.ref.p3, o.ref.p97)}" fill="#F7E6D6"/><path d="${band(o.ref.p15, o.ref.p85)}" fill="#F2D3BC"/><path d="${path(o.ref.p50)}" fill="none" stroke="#D85A30" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>` : '';
+  const lines = series.map(s => {
+    const pts = s.pts.filter(p => p.x >= 0 && p.x <= xmax);
+    let d = '';
+    if (s.stepLine && pts.length) { d = 'M' + sx(pts[0].x).toFixed(1) + ' ' + sy(0).toFixed(1); pts.forEach(p => { d += ' L' + sx(p.x).toFixed(1) + ' ' + sy(p.prev).toFixed(1) + ' L' + sx(p.x).toFixed(1) + ' ' + sy(p.y).toFixed(1); }); d += ' L' + sx(s.until != null ? Math.min(s.until, xmax) : pts[pts.length - 1].x).toFixed(1) + ' ' + sy(pts[pts.length - 1].y).toFixed(1); }
+    else if (pts.length > 1) d = path(pts);
+    const line = d ? `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.8"/>` : '';
+    const dots = s.dots ? pts.map(p => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.2" fill="${s.color}" stroke="#fff" stroke-width="1.2"/>`).join('') : '';
+    return line + dots;
+  }).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || '그래프')}">${grid}${ref}${lines}
     <text x="${W - R}" y="${H - 8}" font-size="10" text-anchor="end" fill="#B4A58E" dy="-12">개월</text></svg>`;
 }
-function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const n = raw / p; return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p; }
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw || 1))); const n = (raw || 1) / p; return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p; }
 
-/* 이정표 */
-function allMsDefs() {
-  return DEFAULT_MS.concat(T('MilestoneDefs').map(d => ({ key: 'x_' + d.id, t: d.title, c: d.category || '기타', by: num(d.month), custom: d.id })));
+/* ───────── 발달 체크 (CDC 개월별) ───────── */
+function msGroups() {
+  const groups = MS_GROUPS.map(g => ({ m: g.m, label: g.label, items: g.items.map(([key, t, d]) => ({ key, t, d })) }));
+  T('MilestoneDefs').forEach(d => {
+    const mm = num(d.month) || 0;
+    const g = groups.find(x => x.m >= mm) || groups[groups.length - 1];
+    g.items.push({ key: 'x_' + d.id, t: d.title, d: MS_DOMAINS.includes(d.category) ? d.category : '기타', custom: d.id });
+  });
+  return groups;
 }
+const msItem = key => { for (const g of msGroups()) { const it = g.items.find(i => i.key === key); if (it) return Object.assign({ group: g }, it); } return null; };
+const curGroup = c => { const m = age(c).months; const gs = MS_GROUPS; return (gs.find(g => g.m >= m) || gs[gs.length - 1]).m; };
 function msHtml(c) {
-  const defs = allMsDefs();
   const got = Object.fromEntries(T('Milestones').filter(m => m.childId === c.id).map(m => [m.key, m]));
-  const nowM = age(c).mDec;
-  const max = Math.max(36, Math.ceil(nowM / 6) * 6);
-  const pos = m => Math.min(100, Math.max(0, m / max * 100));
-  const doneN = defs.filter(d => got[d.key]).length;
-  const groups = MS_CATS.map(cat => {
-    const ds = defs.filter(d => d.c === cat);
-    if (!ds.length) return '';
-    return `<div class="sec-title">${cat}</div><div class="card" style="padding:4px 12px">${ds.map(d => {
-      const g = got[d.key];
-      const gm = g ? dtMonth(g, c) : null;
-      let refBar = '';
-      if (S.showRef && d.from != null) refBar = `<div class="rng" style="left:${pos(d.from)}%;width:${pos(d.to) - pos(d.from)}%"></div>`;
-      else if (S.showRef && d.by != null) refBar = `<div class="rng" style="left:0;width:${pos(d.by)}%;opacity:.55"></div><div class="by" style="left:${pos(d.by)}%"></div>`;
-      const dot = gm != null ? `<div class="dot ${g.dateType === 'exact' ? '' : 'hollow'}" style="left:${pos(gm)}%"></div>` : '';
-      let status = g ? `<span class="small">${dtLabel(g, c)}</span>` : '<span class="small muted">아직</span>';
-      const refTxt = S.showRef ? (d.from != null ? `보통 ${d.from}~${d.to}개월` : d.by != null ? `대부분 ${d.by}개월까지` : '') : '';
-      return `<div class="ms" data-act="msEdit" data-k="${d.key}"><div class="between"><span>${g ? '✓ ' : ''}${esc(d.t)}</span>${status}</div>
-        <div class="bar">${refBar}<div class="now" style="left:${pos(nowM)}%"></div>${dot}</div>${refTxt ? `<div class="tiny muted" style="margin-top:2px">${refTxt}</div>` : ''}</div>`;
-    }).join('')}</div>`;
-  }).join('');
-  return `<div class="card small"><div class="between"><span>해낸 것 <b>${doneN}</b>개 · 아직 ${defs.length - doneN}개</span><button class="btn small" data-act="msAdd">＋ 항목 추가</button></div>
-    ${S.showRef ? `<div class="tiny muted" style="margin-top:6px">막대 범위: 대부분의 아이가 해내는 시기 · 세로선: 지금 · 꽉 찬 점: 정확한 날짜 · 빈 점: 대략<br>아이마다 차이가 커요. 참고로만 봐주세요. (WHO 운동발달 기준, CDC 발달 체크리스트)</div>` : ''}</div>
-    <div class="axis" style="margin:0 4px"><span>0</span><span>${max / 2}개월</span><span>${max}개월</span></div>${groups}`;
+  const nowM = age(c).months, cur = curGroup(c);
+  const groups = msGroups();
+  if (!S.msOpen || S.msOpenFor !== c.id) { S.msOpen = new Set([cur]); S.msOpenFor = c.id; }
+  const order = [groups.find(g => g.m === cur)].concat(groups.filter(g => g.m < cur).reverse(), groups.filter(g => g.m > cur));
+  const card = g => {
+    const done = g.items.filter(i => got[i.key]).length, open = S.msOpen.has(g.m);
+    const past = g.m <= nowM && done < g.items.length;
+    const body = open ? MS_DOMAINS.map(dm => {
+      const its = g.items.filter(i => i.d === dm);
+      if (!its.length) return '';
+      return `<div class="ms-dom">${MS_DOMAIN_LABEL[dm]}</div>` + its.map(i => {
+        const r = got[i.key];
+        return `<div class="ms-row"><button class="ck ${r ? 'on' : ''}" data-act="msQuick" data-k="${i.key}" data-m="${g.m}" aria-label="체크">${r ? '✓' : ''}</button>
+          <span class="grow" data-act="msEdit" data-k="${i.key}">${esc(i.t)}</span>${r ? `<span class="tiny muted" data-act="msEdit" data-k="${i.key}">${dtLabel(r, c)}</span>` : ''}</div>`;
+      }).join('');
+    }).join('') + (past ? `<button class="btn small block" style="margin-top:8px" data-act="msAllDone" data-m="${g.m}">남은 항목 모두 "${g.label} 이전에 했어요"</button>` : '') : '';
+    return `<div class="card ms-card ${g.m === cur ? 'cur' : ''}"><div class="between" data-act="msToggle" data-m="${g.m}">
+      <span><b>${g.label}</b>${g.m === cur ? ' <span class="tag star">지금 시기</span>' : ''}</span>
+      <span class="small ${done === g.items.length ? 'ok' : 'muted'}">${done}/${g.items.length} ${open ? '▴' : '▾'}</span></div>${body}</div>`;
+  };
+  const idx = order.findIndex(g => g.m > cur);
+  return `<div class="card small"><div class="between"><span><b>${esc(c.name)}</b>는 지금 ${monthText(nowM)}, <b>${groups.find(g => g.m === cur).label}</b> 체크리스트 시기예요.</span><button class="btn small" data-act="msAdd">＋ 항목</button></div>
+    <div class="tiny muted" style="margin-top:6px">각 시기까지 대부분(75% 이상)의 아이가 하는 것이에요. 동그라미를 누르면 체크되고, 글자를 누르면 날짜를 넣을 수 있어요. 아이마다 차이가 커서 참고로만 봐주세요.</div></div>
+    ${order.map((g, i) => (i === 1 && g.m < cur ? '<div class="sec-title">지난 시기</div>' : '') + (i === idx ? '<div class="sec-title">다음 시기</div>' : '') + card(g)).join('')}
+    <div class="tiny muted" style="margin:10px 4px">출처: 미국 CDC "Learn the Signs. Act Early." 발달 체크리스트 (2022 개정)를 우리말로 옮김. '기어 다녀요'는 CDC 목록에 없는 참고 항목이에요.</div>`;
 }
 
-/* 이 */
+/* ───────── 이 (젖니·영구치) ───────── */
 function teethHtml(c) {
+  const set = S.teethSet || 'D';
   const got = Object.fromEntries(T('Teeth').filter(t => t.childId === c.id).map(t => [t.tooth, t]));
-  const n = Object.keys(got).length;
+  const list0 = set === 'P' ? PERM : TEETH;
+  const N = set === 'P' ? 8 : 5;
   const W = 300, cx = 150;
-  const place = (t) => {
+  const sizes = set === 'P' ? [15, 14, 14, 15, 15, 18, 18, 16] : [22, 20, 20, 25, 27];
+  const H = set === 'P' ? 300 : 250, uy = set === 'P' ? 132 : 108, ly = set === 'P' ? 168 : 142;
+  const place = t => {
     const k = t.side === 'R' ? -1 : 1;
-    const ang = (0.1 + t.i * 0.2) * Math.PI / 2;
-    const x = cx + k * Math.sin(ang) * 118;
-    const y = t.jaw === 'U' ? 100 - Math.cos(ang) * 70 : 140 + Math.cos(ang) * 70;
-    const sz = [20, 18, 18, 24, 26][t.i];
-    return { x, y, sz };
+    const ang = (0.06 + t.i * (0.88 / (N - 1))) * Math.PI / 2;
+    const rx = set === 'P' ? 124 : 118, ry = set === 'P' ? 112 : 72;
+    return { x: cx + k * Math.sin(ang) * rx, y: t.jaw === 'U' ? uy - Math.cos(ang) * ry : ly + Math.cos(ang) * ry, sz: sizes[t.i] };
   };
-  const teeth = TEETH.map(t => {
-    const p = place(t), on = !!got[t.code];
-    return `<g class="t" data-act="toothEdit" data-k="${t.code}"><rect x="${(p.x - p.sz / 2).toFixed(1)}" y="${(p.y - p.sz / 2).toFixed(1)}" width="${p.sz}" height="${p.sz}" rx="7" fill="${on ? '#D85A30' : '#fff'}" stroke="${on ? '#993C1D' : '#D3C4AA'}" stroke-width="1.5"/></g>`;
+  const teeth = list0.map(t => {
+    const p = place(t), g = got[t.code], lost = g && isDate(g.lostDate);
+    const fill = lost ? '#F1EDE6' : g ? (set === 'P' ? '#3B6FB6' : '#D85A30') : '#fff';
+    const stroke = lost ? '#B4A58E' : g ? (set === 'P' ? '#244A80' : '#993C1D') : '#D3C4AA';
+    const tc = g && !lost ? '#fff' : '#B4A58E';
+    return `<g class="t" data-act="toothEdit" data-k="${t.code}"><rect x="${(p.x - p.sz / 2).toFixed(1)}" y="${(p.y - p.sz / 2).toFixed(1)}" width="${p.sz}" height="${p.sz}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="1.5" ${lost ? 'stroke-dasharray="3 2"' : ''}/>
+      <text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="${set === 'P' ? 10 : 11}" text-anchor="middle" fill="${tc}" font-weight="600">${lost ? '×' : t.no}</text></g>`;
   }).join('');
-  const list = TEETH.filter(t => got[t.code]).map(t => ({ t, g: got[t.code] })).sort((a, b) => (dtMonth(a.g, c) || 0) - (dtMonth(b.g, c) || 0));
-  return `<div class="card"><div class="between"><span>난 이 <b>${n}</b>개 / 20개</span><button class="btn small" data-act="teethBulk">한꺼번에 체크</button></div>
-    <div class="teeth"><svg viewBox="0 0 ${W} 240"><text x="${cx}" y="88" font-size="12" text-anchor="middle" fill="#B4A58E">위</text><text x="${cx}" y="160" font-size="12" text-anchor="middle" fill="#B4A58E">아래</text>${teeth}</svg></div>
-    <div class="tiny muted">이를 누르면 난 날짜를 기록할 수 있어요.${S.showRef ? ' 보통 첫 이는 6~10개월쯤, 젖니 20개는 30개월 전후에 다 나요.' : ''}</div></div>
-    ${list.length ? `<div class="card">${list.map(({ t, g }) => `<div class="list-row" data-act="toothEdit" data-k="${t.code}"><span>${t.name}</span><span class="small">${dtLabel(g, c)}</span></div>`).join('')}</div>` : ''}`;
+  const erupted = list0.filter(t => got[t.code]).length;
+  const lostN = set === 'D' ? TEETH.filter(t => got[t.code] && isDate(got[t.code].lostDate)).length : 0;
+  const list = list0.filter(t => got[t.code]).map(t => ({ t, g: got[t.code] })).sort((a, b) => (dtMonth(a.g, c) || 0) - (dtMonth(b.g, c) || 0));
+  const refTxt = set === 'P' ? ' 영구치는 보통 6~7세에 첫째 큰어금니와 아래 앞니부터 나요.' : ' 보통 첫 이는 6~10개월쯤, 젖니 20개는 30개월 전후에 다 나고, 6~7세부터 빠지기 시작해요.';
+  return `<div class="seg"><button class="${set === 'D' ? 'on' : ''}" data-act="teethSet" data-v="D">젖니 (20개)</button><button class="${set === 'P' ? 'on' : ''}" data-act="teethSet" data-v="P">영구치 (32개)</button></div>
+    <div class="card"><div class="between"><span>난 이 <b>${erupted}</b>개 / ${list0.length}개${lostN ? ` · 빠진 이 <b>${lostN}</b>개` : ''}</span><button class="btn small" data-act="teethBulk">한꺼번에 체크</button></div>
+    <div class="teeth"><svg viewBox="0 0 ${W} ${H}"><text x="${cx}" y="${uy - 10}" font-size="12" text-anchor="middle" fill="#B4A58E">위</text><text x="${cx}" y="${ly + 18}" font-size="12" text-anchor="middle" fill="#B4A58E">아래</text>
+      <text x="4" y="${(uy + ly) / 2 + 4}" font-size="10" fill="#B4A58E">오른쪽</text><text x="296" y="${(uy + ly) / 2 + 4}" font-size="10" text-anchor="end" fill="#B4A58E">왼쪽</text>${teeth}</svg></div>
+    <div class="tiny muted">번호는 가운데부터 바깥쪽으로 세요. 이를 누르면 난 날${set === 'D' ? '과 빠진 날' : ''}을 기록할 수 있어요.${S.showRef ? refTxt : ''}</div></div>
+    ${list.length ? `<div class="card">${list.map(({ t, g }) => `<div class="list-row" data-act="toothEdit" data-k="${t.code}"><span>${t.name}</span><span class="small" style="text-align:right">${dtLabel(g, c)}${isDate(g.lostDate) ? `<br><span class="tiny muted">빠짐 ${shortDate(g.lostDate)}</span>` : ''}</span></div>`).join('')}</div>` : ''}`;
+}
+
+/* ───────── 형제 비교 ───────── */
+function wordSeries(c) {
+  const ws = T('Words').filter(w => w.childId === c.id && w.kind !== 'sentence').map(w => ({ m: dtMonth(w, c), w })).filter(x => x.m != null).sort((a, b) => a.m - b.m);
+  const pts = []; let n = 0;
+  ws.forEach(x => { const prev = n; n++; if (pts.length && Math.abs(pts[pts.length - 1].x - x.m) < 0.01) { pts[pts.length - 1].y = n; } else pts.push({ x: x.m, y: n, prev }); });
+  return pts;
+}
+function wordAt(c, k) {
+  const ws = T('Words').filter(w => w.childId === c.id && w.kind !== 'sentence').map(w => ({ m: dtMonth(w, c), w })).filter(x => x.m != null).sort((a, b) => a.m - b.m);
+  return ws.length >= k ? ws[k - 1].w : null;
+}
+const firstSentence = c => T('Words').filter(w => w.childId === c.id && w.kind === 'sentence').map(w => ({ m: dtMonth(w, c), w })).filter(x => x.m != null).sort((a, b) => a.m - b.m).map(x => x.w)[0] || null;
+const firstTooth = c => T('Teeth').filter(t => t.childId === c.id && !String(t.tooth).startsWith('P')).map(t => ({ m: dtMonth(t, c), t })).filter(x => x.m != null).sort((a, b) => a.m - b.m).map(x => x.t)[0] || null;
+const msRec = (c, k) => T('Milestones').find(m => m.childId === c.id && m.key === k) || null;
+function mLabel(r, c) {
+  if (!r) return '<span class="muted">-</span>';
+  if (r.dateType === 'approx') return `약 ${r.month}개월`;
+  if (r.dateType === 'range') return `${r.month}~${r.monthTo}개월`;
+  if (r.dateType === 'before') return `${r.month}개월 이전`;
+  return isDate(r.date) ? monthText(age(c, r.date).months) : '-';
+}
+function compareHtml() {
+  const kids = children();
+  const legend = `<div class="legend">${kids.map(k => `<span><i style="background:${kidColor(k)}"></i>${esc(k.name)}</span>`).join('')}</div>`;
+  const xmaxOf = extra => Math.min(72, Math.max(12, Math.ceil((Math.max(...kids.map(k => age(k).mDec), extra || 0) + 2) / 6) * 6));
+  const m = MEASURES[S.measure];
+  const gSeries = kids.map(k => ({ color: kidColor(k), dots: true, pts: growthRows(k, m.f).map(g => ({ x: age(k, g.date).mDec, y: num(g[m.f]) })) }));
+  const wSeries = kids.map(k => ({ color: kidColor(k), stepLine: true, until: age(k).mDec, pts: wordSeries(k) }));
+  const rows = [
+    ['첫 이', k => mLabel(firstTooth(k), k)],
+    ['뒤집기', k => mLabel(msRec(k, 'roll'), k)],
+    ['혼자 앉기', k => mLabel(msRec(k, 'sit'), k)],
+    ['혼자 걷기', k => mLabel(msRec(k, 'walk'), k)],
+    ['첫 단어', k => mLabel(wordAt(k, 1), k)],
+    ['단어 10개', k => mLabel(wordAt(k, 10), k)],
+    ['단어 50개', k => mLabel(wordAt(k, 50), k)],
+    ['두 단어 조합', k => mLabel(firstSentence(k), k)]
+  ];
+  return `<div class="card"><div class="between"><b>성장</b>${legend}</div>
+      <div class="seg" style="margin-top:8px">${Object.keys(MEASURES).map(k => `<button class="${S.measure === k ? 'on' : ''}" data-act="measure" data-v="${k}">${MEASURES[k].l}</button>`).join('')}</div>
+      ${lineChart(gSeries, { xmax: xmaxOf(), label: '형제 ' + m.l + ' 비교' })}<div class="tiny muted">같은 개월 수끼리 겹쳐서 보여줘요.</div></div>
+    <div class="card"><div class="between"><b>말한 단어 수</b>${legend}</div>
+      ${lineChart(wSeries, { xmax: xmaxOf(), y0: 0, label: '형제 단어 수 비교' })}<div class="tiny muted">날짜를 모르는 단어는 '○개월 이전'의 시점에 모아서 보여요.</div></div>
+    <div class="card"><b>처음 해낸 때</b>
+      <table class="cmp"><tr><th></th>${kids.map(k => `<th style="color:${kidColor(k)}">${esc(k.name)}</th>`).join('')}</tr>
+      ${rows.map(([l, f]) => `<tr><td>${l}</td>${kids.map(k => `<td>${f(k)}</td>`).join('')}</tr>`).join('')}</table></div>`;
 }
 
 /* ───────── 단어장 ───────── */
@@ -744,12 +904,51 @@ function wordsView() {
   return `${topBar()}${updateBanner()}<div class="page">
     <div class="card between"><div><div class="big-num">${words.length}<span style="font-size:15px;font-weight:500;color:var(--ink2)"> 단어</span></div><div class="small muted">문장 ${sents.length}개</div></div>
       <button class="btn primary" data-act="wordEdit">＋ 추가</button></div>
-    ${S.showRef ? `<div class="tiny muted" style="margin:-4px 4px 10px">참고: 보통 18개월쯤 3개 이상, 24개월쯤 두 단어 문장, 30개월쯤 50개 정도를 말해요. 아이마다 차이가 커요. (CDC)</div>` : ''}
+    ${wordStageHtml(c)}
+    <div class="card"><div class="between"><b>말한 단어 수</b><span class="tiny muted">${monthText(age(c).months)}</span></div>
+      ${lineChart([{ color: '#D85A30', stepLine: true, until: age(c).mDec, pts: wordSeries(c) }], { xmax: Math.min(72, Math.max(24, Math.ceil((age(c).mDec + 3) / 6) * 6)), y0: 0, label: '단어 수 그래프' })}
+      <div class="tiny muted">날짜를 모르는 단어는 '○개월 이전'의 시점에 모아서 보여요. 앞으로 새 말을 날짜와 함께 적으면 곡선이 생겨요.</div></div>
+    ${wordCatHtml(words)}
     <div class="seg"><button class="${S.wordKind === 'word' ? 'on' : ''}" data-act="wordKind" data-v="word">단어</button><button class="${S.wordKind === 'sentence' ? 'on' : ''}" data-act="wordKind" data-v="sentence">문장</button></div>
     <input class="i" type="search" placeholder="찾기" value="${esc(S.wordQ)}" data-in="wordQ" style="margin-bottom:4px">
     <div id="wl">${byCat}${other.length ? `<div class="sec-title">기타</div>${other.map(w => `<span class="word" data-act="wordEdit" data-id="${w.id}">${esc(w.word)}</span>`).join('')}` : ''}
     ${list.length ? '' : '<div class="card muted" style="text-align:center">아직 없어요.</div>'}</div>
   </div>${navBar('words')}`;
+}
+
+/* 말 발달 단계 (CDC 2022 체크리스트 기준 시기) */
+function wordStage(c) {
+  const n = T('Words').filter(w => w.childId === c.id && w.kind !== 'sentence').length;
+  const sents = T('Words').filter(w => w.childId === c.id && w.kind === 'sentence');
+  const long = sents.filter(w => String(w.meaning || w.word).trim().split(/\s+/).length >= 4);
+  const firstLong = long.map(w => ({ m: dtMonth(w, c), w })).sort((a, b) => (a.m || 0) - (b.m || 0)).map(x => x.w)[0];
+  const steps = [
+    { t: '첫 단어', done: n >= 1, when: wordAt(c, 1), ref: '15개월까지 한두 단어' },
+    { t: '단어 3개', done: n >= 3, when: wordAt(c, 3), ref: '18개월까지' },
+    { t: '두 단어 조합', done: sents.length > 0, when: firstSentence(c), ref: '24개월까지' },
+    { t: '단어 50개', done: n >= 50, when: wordAt(c, 50), ref: '30개월쯤' },
+    { t: '네 단어 이상 문장', done: long.length > 0, when: firstLong, ref: '4세까지' }
+  ];
+  const next = steps.find(x => !x.done);
+  return { steps, n, now: next ? '다음: ' + next.t : '단계 모두 ✓' };
+}
+function wordStageHtml(c) {
+  const st = wordStage(c);
+  return `<div class="card"><b>말 발달 단계</b>
+    <div class="stages">${st.steps.map(x => `<div class="stg ${x.done ? 'on' : ''}"><span class="dotc">${x.done ? '✓' : ''}</span><div><div>${x.t}</div>
+      <div class="tiny muted">${x.done ? (x.when ? mLabel(x.when, c) : '') + ' · ' : ''}보통 ${x.ref}</div></div></div>`).join('')}</div>
+    <div class="tiny muted" style="margin-top:6px">'보통'은 대부분(75% 이상)의 아이가 그때까지 하는 것이에요 (미국 CDC 2022). 단어장에 적은 것만 세서, 실제로 아는 말은 더 많아요.</div></div>`;
+}
+const CAT_COLORS = { 사람: '#D85A30', 음식: '#EF9F27', 동물: '#3F8F5A', 물건: '#3B6FB6', 탈것: '#5BA3C9', 몸: '#D4537E', 동작: '#8A5BB5', 표현: '#B4762E', 기타: '#B4A58E' };
+function wordCatHtml(words) {
+  if (!words.length) return '';
+  const cnt = {}; words.forEach(w => { const k = WORD_CATS.includes(w.category) ? w.category : '기타'; cnt[k] = (cnt[k] || 0) + 1; });
+  const ks = WORD_CATS.filter(k => cnt[k]);
+  const act = (cnt['동작'] || 0) + (cnt['표현'] || 0);
+  return `<div class="card"><b>말의 종류</b>
+    <div class="catbar">${ks.map(k => `<span style="width:${cnt[k] / words.length * 100}%;background:${CAT_COLORS[k]}" title="${k} ${cnt[k]}"></span>`).join('')}</div>
+    <div class="legend wrap">${ks.map(k => `<span><i style="background:${CAT_COLORS[k]}"></i>${k} ${cnt[k]}</span>`).join('')}</div>
+    <div class="tiny muted" style="margin-top:6px">사물 이름 다음에 '먹어', '가자' 같은 동작어가 늘어나는 게 다음 단계의 신호예요. 지금 동작어·표현은 ${act}개예요.</div></div>`;
 }
 
 /* ───────── 건강 ───────── */
@@ -788,6 +987,8 @@ function settingsView() {
     <div class="card">${children().map(c => `<div class="list-row" data-act="childEdit" data-id="${c.id}"><span>${esc(c.name)} <span class="tiny muted">${c.sex === 'F' ? '여아' : '남아'}</span></span><span class="small muted">${esc(c.birth)} · ${ageLabel(c)}</span></div>`).join('') || '<div class="muted small">등록된 아이가 없어요.</div>'}</div>
     <div class="sec-title">화면</div>
     <div class="card list-row" data-act="toggleRef"><span>발달·성장 기준 범위 보기</span><span class="small" style="color:var(--accent)">${S.showRef ? '켜짐' : '꺼짐'}</span></div>
+    <div class="sec-title">기록</div>
+    <div class="card list-row" data-act="tagManage"><span>태그 관리<br><span class="tiny muted">태그 추가, 이름 바꾸기, 순서, 숨기기</span></span><span>›</span></div>
     <div class="sec-title">지난 기록</div>
     <div class="card list-row" data-act="go" data-h="bulk"><span>지난 사진 한꺼번에 올리기<br><span class="tiny muted">찍은 날짜별로 묶어서 기록 초안을 만들어요 (PC 추천)</span></span><span>›</span></div>
     <div class="sec-title">보관</div>
@@ -843,7 +1044,7 @@ async function bulkRun() {
       const strs = [];
       for (const it of g.items) {
         try {
-          const thumb = await resizeImage(it.f, 360, 0.72), full = await resizeImage(it.f, 1600, 0.82);
+          const thumb = await resizeImage(it.f, 360, 0.72), full = await resizeImage(it.f, 2560, 0.86);
           const j = await api('uploadPhoto', { date: g.date, thumb: b64(thumb), full: b64(full) });
           const sp = splitPhoto(j.photo); memPhoto.set(sp.thumb, thumb); IDB.set(sp.thumb, thumb);
           strs.push(j.photo);
@@ -911,10 +1112,10 @@ function growthPasteSheet() {
 }
 function msSheet(key) {
   const c = pageChild();
-  const d = allMsDefs().find(x => x.key === key);
+  const d = msItem(key);
+  if (!d) return toast('항목을 찾을 수 없어요.');
   const g = T('Milestones').find(m => m.childId === c.id && m.key === key);
-  const ref = d.from != null ? `보통 ${d.from}~${d.to}개월 (WHO)` : d.by != null ? `대부분 ${d.by}개월까지 (CDC)` : '';
-  openSheet(`<h3>${esc(d.t)}</h3>${ref && S.showRef ? `<div class="small muted">${ref}</div>` : ''}
+  openSheet(`<h3>${esc(d.t)}</h3><div class="small muted">${d.group.label} 체크리스트 · ${MS_DOMAIN_LABEL[d.d] || ''}${d.custom ? ' · 직접 추가한 항목' : ''}</div>
     <label class="f">언제 했나요?</label>${dtForm(g || { dateType: 'exact' }, c)}
     <label class="f">메모</label><input class="i" name="memo" value="${esc(g ? g.memo : '')}">
     ${d.custom ? `<button class="btn small ghost danger" data-act="msDefDel" data-id="${d.custom}" style="margin-top:8px">이 항목 자체를 목록에서 빼기</button>` : ''}
@@ -925,9 +1126,11 @@ function msSheet(key) {
   });
 }
 function msAddSheet() {
-  openSheet(`<h3>이정표 항목 추가</h3><label class="f">항목 이름</label><input class="i" name="title" placeholder="예: 혼자 신발 신기">
-    <label class="f">분류</label><select class="i" name="category">${MS_CATS.map(c => `<option>${c}</option>`).join('')}</select>
-    <label class="f">보통 해내는 시기 (개월, 모르면 비워두세요)</label><input class="i" name="month" inputmode="decimal">${sheetButtons()}`);
+  const c = pageChild();
+  const cur = c ? curGroup(c) : 12;
+  openSheet(`<h3>발달 체크 항목 추가</h3><label class="f">항목 이름</label><input class="i" name="title" placeholder="예: 혼자 신발 신기">
+    <div class="grid2"><div><label class="f">시기</label><select class="i" name="month">${MS_GROUPS.map(g => `<option value="${g.m}" ${g.m === cur ? 'selected' : ''}>${g.label}</option>`).join('')}</select></div>
+    <div><label class="f">분류</label><select class="i" name="category">${MS_DOMAINS.map(d => `<option value="${d}" ${d === '기타' ? 'selected' : ''}>${MS_DOMAIN_LABEL[d]}</option>`).join('')}</select></div></div>${sheetButtons()}`);
   bindSave(async p => {
     if (!formVal(p, 'title')) throw new Error('항목 이름을 적어주세요.');
     await saveRow('MilestoneDefs', { id: uid(), title: formVal(p, 'title'), category: formVal(p, 'category'), month: formVal(p, 'month') });
@@ -935,24 +1138,50 @@ function msAddSheet() {
 }
 function toothSheet(code) {
   const c = pageChild();
-  const t = TEETH.find(x => x.code === code);
+  const t = toothByCode(code);
   const g = T('Teeth').find(x => x.childId === c.id && x.tooth === code);
-  openSheet(`<h3>${t.name}</h3>${S.showRef ? `<div class="small muted">보통 ${t.from}~${t.to}개월에 나요.</div>` : ''}
+  const lostPart = t.perm ? '' : `<label class="f">빠진 날 (빠졌을 때만)</label><input class="i" type="date" name="lostDate" value="${esc(g && isDate(g.lostDate) ? g.lostDate : '')}">
+    ${S.showRef ? `<div class="tiny muted" style="margin-top:4px">보통 ${yrs(t.shedFrom)}~${yrs(t.shedTo)}에 빠져요.</div>` : ''}`;
+  openSheet(`<h3>${t.perm ? '영구치' : '젖니'} · ${t.name}</h3>${S.showRef ? `<div class="small muted">보통 ${yrs(t.from)}~${yrs(t.to)}에 나요. (미국치과협회 기준)</div>` : ''}
     <label class="f">언제 났나요?</label>${dtForm(g || { dateType: 'exact' }, c)}
+    ${lostPart}
     <label class="f">메모</label><input class="i" name="memo" value="${esc(g ? g.memo : '')}">${sheetButtons(g ? 'toothDel' : null, g ? g.id : null)}`);
   bindSave(async p => {
-    await saveRow('Teeth', Object.assign({ id: c.id + '_' + code, childId: c.id, tooth: code, memo: formVal(p, 'memo'), deleted: '' }, readDt(p)));
+    const lost = formVal(p, 'lostDate');
+    await saveRow('Teeth', Object.assign({ id: c.id + '_' + code, childId: c.id, tooth: code, memo: formVal(p, 'memo'), lostDate: lost || '', deleted: '' }, readDt(p)));
   });
 }
 function teethBulkSheet() {
   const c = pageChild();
+  const list = S.teethSet === 'P' ? PERM : TEETH;
   const have = new Set(T('Teeth').filter(t => t.childId === c.id).map(t => t.tooth));
-  openSheet(`<h3>지금 난 이 한꺼번에 체크</h3><div class="small muted">이미 난 이를 모두 고르면 '${age(c).months}개월 이전'으로 기록돼요. 날짜는 나중에 하나씩 고칠 수 있어요.</div>
-    <div class="chips" style="margin-top:10px">${TEETH.map(t => `<button type="button" class="chip ${have.has(t.code) ? 'on' : ''}" data-act="chipToggle" data-v="${t.code}" ${have.has(t.code) ? 'disabled' : ''}>${t.name.replace('위 ', '위·').replace('아래 ', '아래·')}</button>`).join('')}</div>${sheetButtons()}`);
+  openSheet(`<h3>지금 난 ${S.teethSet === 'P' ? '영구치' : '젖니'} 한꺼번에 체크</h3><div class="small muted">이미 난 이를 모두 고르면 '${age(c).months}개월 이전'으로 기록돼요. 날짜는 나중에 하나씩 고칠 수 있어요.</div>
+    <div class="chips" style="margin-top:10px">${list.map(t => `<button type="button" class="chip ${have.has(t.code) ? 'on' : ''}" data-act="chipToggle" data-v="${t.code}" ${have.has(t.code) ? 'disabled' : ''}>${t.name}</button>`).join('')}</div>${sheetButtons()}`);
   bindSave(async p => {
     const picked = $$('.chip.on:not([disabled])', p).map(b => b.dataset.v);
     if (!picked.length) throw new Error('새로 고른 이가 없어요.');
-    await saveRows('Teeth', picked.map(code => ({ id: c.id + '_' + code, childId: c.id, tooth: code, dateType: 'before', date: '', month: age(c).months, monthTo: '', memo: '', deleted: '' })));
+    await saveRows('Teeth', picked.map(code => ({ id: c.id + '_' + code, childId: c.id, tooth: code, dateType: 'before', date: '', month: age(c).months, monthTo: '', memo: '', lostDate: '', deleted: '' })));
+  });
+}
+/* 태그 관리 */
+function tagRowHtml(t) {
+  return `<div class="tagrow" data-k="${esc(t.k)}" data-row="${esc(t.rowId || '')}">
+    <input class="i" name="label" value="${esc(t.l)}" maxlength="20">
+    <label class="tiny muted hide-lb"><input type="checkbox" name="hidden" ${t.hidden ? 'checked' : ''}> 숨김</label>
+    <button type="button" class="btn small ghost" data-act="tagUp" aria-label="위로">▲</button><button type="button" class="btn small ghost" data-act="tagDown" aria-label="아래로">▼</button></div>`;
+}
+function tagSheet() {
+  openSheet(`<h3>태그 관리</h3><div class="small muted">이름 앞에 이모지를 넣으면 보기 좋아요. 숨긴 태그는 새 기록에 안 보이고, 예전 기록에는 그대로 남아요.</div>
+    <div id="tagrows" style="margin-top:10px">${allTags().map(tagRowHtml).join('')}</div>
+    <div class="row" style="margin-top:10px"><input class="i grow" id="newtag" placeholder="예: 🍚 먹은 것" maxlength="20"><button type="button" class="btn small" data-act="tagAdd">추가</button></div>
+    ${sheetButtons()}`);
+  bindSave(async p => {
+    const rows = $$('.tagrow', p).map((r, i) => {
+      const label = r.querySelector('[name="label"]').value.trim();
+      if (!label) throw new Error('태그 이름이 비어 있어요.');
+      return { id: r.dataset.row || 'tag_' + r.dataset.k, key: r.dataset.k, label, order: i, hidden: r.querySelector('[name="hidden"]').checked ? 'TRUE' : '', deleted: '' };
+    });
+    await saveRows('Tags', rows);
   });
 }
 function wordSheet(id) {
@@ -1092,7 +1321,31 @@ const ACT = {
   sheetSave: () => runSheetSave(),
   applyUpdate: () => { if (S.waitingSW) S.waitingSW.postMessage('skipWaiting'); },
   more: () => { S.page += 20; $('#tl').innerHTML = timelineHtml(); hydratePhotos(); },
-  tagFilter: el => { S.filter.tag = el.dataset.v; S.page = 20; render(); },
+  tagFilter: el => { S.filter.tag = el.dataset.v; if (!el.dataset.v) S.filter.author = ''; S.page = 20; render(); },
+  authorFilter: el => { S.filter.author = S.filter.author === el.dataset.v ? '' : el.dataset.v; S.page = 20; render(); },
+  growthGo: el => { S.devTab = 'growth'; S.measure = el.dataset.v; go('dev'); },
+  msToggle: el => { const m = Number(el.dataset.m); S.msOpen.has(m) ? S.msOpen.delete(m) : S.msOpen.add(m); render(); },
+  msQuick: async el => {
+    const c = pageChild(), key = el.dataset.k, gm = Number(el.dataset.m);
+    if (T('Milestones').some(m => m.childId === c.id && m.key === key)) return msSheet(key);
+    const nowM = age(c).months;
+    el.classList.add('on'); el.textContent = '✓';
+    try { await saveRow('Milestones', { id: c.id + '_' + key, childId: c.id, key, dateType: 'before', date: '', month: Math.min(gm, nowM), monthTo: '', memo: '', deleted: '' }); render(); }
+    catch (e) { toast(e.message); render(); }
+  },
+  msAllDone: async el => {
+    const c = pageChild(), gm = Number(el.dataset.m);
+    const g = msGroups().find(x => x.m === gm);
+    const have = new Set(T('Milestones').filter(m => m.childId === c.id).map(m => m.key));
+    const rows = g.items.filter(i => !have.has(i.key)).map(i => ({ id: c.id + '_' + i.key, childId: c.id, key: i.key, dateType: 'before', date: '', month: gm, monthTo: '', memo: '', deleted: '' }));
+    if (!rows.length || !confirm(`${g.label} 항목 ${rows.length}개를 '${gm}개월 이전에 했어요'로 체크할까요?`)) return;
+    try { await saveRows('Milestones', rows); toast('체크했어요.'); render(); } catch (e) { toast(e.message); }
+  },
+  teethSet: el => { S.teethSet = el.dataset.v; render(); },
+  tagManage: () => tagSheet(),
+  tagUp: el => { const r = el.closest('.tagrow'); if (r.previousElementSibling) r.parentNode.insertBefore(r, r.previousElementSibling); },
+  tagDown: el => { const r = el.closest('.tagrow'); if (r.nextElementSibling) r.parentNode.insertBefore(r.nextElementSibling, r); },
+  tagAdd: () => { const inp = $('#newtag'); const v = inp.value.trim(); if (!v) return; $('#tagrows').insertAdjacentHTML('beforeend', tagRowHtml({ k: 't' + uid(), l: v, hidden: false })); inp.value = ''; },
   filterDraft: () => { S.filter.tag = '__draft'; render(); },
   /* 기록 쓰기 */
   cancelEdit: () => { E = null; ACT.back(); },
@@ -1157,7 +1410,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   if (e.target.dataset && e.target.dataset.ch === 'month') { S.filter.month = e.target.value; S.page = 20; $('#tl').innerHTML = timelineHtml(); hydratePhotos(); }
 });
-window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { const r = route().name; if (r !== 'new' && r !== 'edit') E = null; closeSheet(); render(); window.scrollTo(0, 0); });
 
 /* ───────── 시작 ───────── */
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
